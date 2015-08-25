@@ -12,7 +12,10 @@ import matplotlib.pyplot as plt
 import math
 import cmath
 
-w=2.0*math.pi*13.56e6
+def Zres(R,w): return complex(R,0)
+def Zind(L,w): return complex(0,w * L)
+def Zcap(C,w): return 1.0 / (complex(0,w) * C)
+def par(Z1,Z2): return Z1*Z2/(Z1+Z2)
 
 # antenna topology is
 # Zs(=Rs AND Cs) AND ( Zp(=Cp) OR Zl(=Rl AND L) ) 
@@ -21,30 +24,35 @@ print("rfid-antenna-calculator.py")
 print("--------------------------")
 print("")
 print("circuit:")
-print(" --Rs--Cs-------")
-print(" |         |   |")
-print(" |         |  Rl")
-print(" U0(=1V)   Cp  |")
-print(" |         |   L")
-print(" |         |   |")
-print(" ---------------")
+print(" --Rq--Cs----------")
+print(" |         |  |   |")
+print(" |         |  |  Rl")
+print(" U0(=1V)   Cp Rp  |")
+print(" |         |  |   L")
+print(" |         |  |   |")
+print(" ------------------")
 
 U0=1
-Rs=50.0   # Generator U0 output impedance
-Rin=50.0  # This is the input inpedance of Cs/Cp/Rl/L circuit
-Rl=1.5
-L=1.88e-6
+Rq=50.0   # generator U0 output impedance
+Rin=50.0  # this is the desired input inpedance of Cs/Cp/Rl/L circuit
+Rl=1.5    # resistance of the coil
+Rp=5e3    # parallel resistor
+L=1.3e-6
 
-Rlp=pow(w*L,2)/Rl
+w0=2.0*math.pi*13.56e6
+s = complex(0,w0)
+Rlp=(w0*L)**2/Rl
+Q=w0*L/Rl
 
 #!!! do not change anython below here !!!#
 print("")
-print("using Rs=%.02f [Ohm], Rl=%.02f (Rlp=%.02e) [Ohm], L=%.02e [Henry]" % (Rs,Rl,Rlp,L))
+print("using Rq=%.02f [Ohm], Rl=%.02f  [Ohm], L=%.02e [Henry]" % (Rq,Rl,L))
+print("with Rlp=%.02e [Ohm], Q=%.02f" % (Rlp,Q))
 print("")
-
+    
 # calculation for Cp (solve quadratic equation)
-a=pow(w,2)*(pow(w,2)*pow(L,2)+pow(Rl,2))
-b=-2*pow(w,2)*L
+a=(w0**2)*(w0**2)*(L**2)+(Rl**2)
+b=-2*(w0**2)*L
 c=1-Rl/Rin
 
 Cp1=(- b - math.sqrt(pow(b,2)-4*a*c))/(2*a)
@@ -52,12 +60,12 @@ Cp2=(- b + math.sqrt(pow(b,2)-4*a*c))/(2*a)
 
 # calculation for Cs
 Cp=Cp1
-Cs1=1-2*pow(w,2)*L*Cp+pow(w,2)*pow(Cp,2)*(pow(w,2)*pow(L,2)+Rl)
-Cs1=Cs1/(pow(w,2)*(L-Cp*(pow(w,2)*pow(L,2)+pow(Rl,2))))
+Cs1=1-2*pow(w0,2)*L*Cp+pow(w0,2)*pow(Cp,2)*(pow(w0,2)*pow(L,2)+Rl)
+Cs1=Cs1/(pow(w0,2)*(L-Cp*(pow(w0,2)*pow(L,2)+pow(Rl,2))))
 
 Cp=Cp2
-Cs2=1-2*pow(w,2)*L*Cp+pow(w,2)*pow(Cp,2)*(pow(w,2)*pow(L,2)+Rl)
-Cs2=Cs2/(pow(w,2)*(L-Cp*(pow(w,2)*pow(L,2)+pow(Rl,2))))
+Cs2=1-2*pow(w0,2)*L*Cp+pow(w0,2)*pow(Cp,2)*(pow(w0,2)*pow(L,2)+Rl)
+Cs2=Cs2/(pow(w0,2)*(L-Cp*(pow(w0,2)*pow(L,2)+pow(Rl,2))))
 
 # print results
 print("Solution 1: Cp=%.2e Cs=%.2e [F]" % (Cp1,Cs1))
@@ -73,13 +81,12 @@ else:
     Cp=Cp1
 
 # define the antenna impedances
-s=complex(0,w)
 Zp=1/(s*Cp)
-Zs=Rs+1/(s*Cs)
+Zs=Rq+1/(s*Cs)
 Zl=Rl+s*L
 
 # calculate antenna input impedance
-Zin=Rl/(1-2*pow(w,2)*L*Cp+pow(w,2)*pow(Cp,2)*(pow(w,2)*pow(L,2)+pow(Rl,2)))
+Zin=Rl/(1-2*pow(w0,2)*L*Cp+pow(w0,2)*pow(Cp,2)*(pow(w0,2)*pow(L,2)+pow(Rl,2)))
 print("Input impedance (without Rs): Zin=%.2f [Ohm]"% Zin)
 
 # calculate antenna current
@@ -87,3 +94,37 @@ Zabs=abs(Zs+Zl*Zs/Zp+Zl)
 Il=U0/Zabs
 print("Max. RFID coil (L) current: I=%.3f [A]" % Il)
 
+# evaluation of frequency range
+def frange(start, stop, step):
+    i = start
+    while i <= stop:
+        yield i
+        i += step
+
+A_f=[]
+A_Zin_real=[]
+A_Zin_imag=[]
+A_Il=[]
+
+def evaluate(w):
+    Zl = Rl+Zind(L,w)
+    Zp = Zcap(Cp,w)
+    Zs = Rq+Zcap(Cs,w)
+
+    Zin = Zs+Zp*Zl/(Zp+Zl)    
+    Il = U0 / (Zl+Zs+Zs*Zl/Zp)
+
+    A_Zin_real.append(Zin.real)
+    A_Zin_imag.append(Zin.imag)
+    A_Il.append(abs(Il)*1000)
+
+    # print("f=%.03f:Il=%.03f,Zin=%.03f" % (w/(2*math.pi),abs(Il),Zin.real))
+
+
+for w in frange(2*math.pi*13e6,2*math.pi*14e6,2*math.pi*0.01e6):
+    evaluate(w)
+    A_f.append(w/(2*math.pi))
+
+
+plt.plot(A_f,A_Zin_real,A_f,A_Zin_imag,A_f,A_Il)
+plt.show()
